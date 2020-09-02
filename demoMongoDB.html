@@ -1,0 +1,720 @@
+<!--
+- Basic:
+ + Query
+ + Operators
+ + CRUD
+ + Index
+ + Pagination
+ + Query an array
+ + Query nested documents
+- Advanced
+ + Using MongoDB in Node applications
+ + Mongoose
+ + Database design
+ + Aggregation
+ + Performance optimization
+ + Other features (capped collection, TTL index, replica sets, sharding, etc.)
+
+- Client - Server
+  Client                      Server (host:port)
+  + Web browser        
+  + Postman
+  + curl                      WEB SERVER
+  + httpie
+  + axios
+  + etc.
+
+  Client                      Mongo server (host: 27017)
+  + Mongo Shell
+  + Robo3T
+  + Node driver
+  + Drivers for other languages
+
+- Install
+  $ sudo apt update
+  $ sudo apt install mongodb
+  $ sudo systemctl status mongodb
+
+- Import data from CSV
+  $ mongoimport --type csv -d <db> -c <collection> --headerline --drop /path/to/file.csv
+
+- Query data
+  db.<collection>.find(query);
+  {key: value}
+  {key: {$ne: value}}
+  {key: {$gt: value}}
+  {key: {$gte: value}}
+  {key: {$lt: value}}
+  {key: {$lte: value}}
+  {key: {$in: value}}
+  0{key: {$nin: value}}
+  Ex: Find all users with email address ends with .edu -> db.user.find({email: /.edu$/})
+      Find all users with IP address starts with 1 -> db.user.find({ip_address: /^1\./})
+
+- Nested objects
+ {                               db.user.find({                                                                      
+    _id: ObjectId(...),             profile.city: "Hanoi"
+    profile: {                   })       
+       city: "Hanoi",
+       work: "XYZ"
+    }
+ }
+
+- Array field
+{                                 db.user.find({
+   _id: ObjectId(...),             languages: "English"
+   profile: {                      })
+      city: "Hanoi",              db.user.find({  
+      work: "XYZ"                  languages: {$size: 2}
+   },                              })
+   languages: ["English", "Japanese", "Vietnamese"]
+}
+
+- Query empty field
+ + db.user.find({last_login: null})
+ + db.user.find({last_login: {$exists: false}})
+
+- $where oprerator
+ db.collection.find({$where: "js expression"})
+ Ex: Find all users who have first name equals to last name -> db.user.find({$where: "this.first_name === this.last_name"})
+
+- Pagination
+ + db.collection.find(query).skip(x).limit(y)
+ + db.collection.count(query) GET /users?limit=6
+
+- Sort
+  db.collection.find(query).sort({
+     field1: -1,
+     (field: 1)
+  })
+  ascending order: 1     descending order: -1
+
+- CURD
+ db.collection.insert(Many)(doc)
+ db.collection.find(One)(query)
+ db.collection.updateOne(Many)(query, data)
+ db.collection.deleteOne(Many)(query)
+
+- Update document
+ db.collection.updateOne(whatToUpdate, howToUpdate)
+ whatToUpdate = query object
+ howToUpdate = {
+    $set: {
+       field1: value1,
+       field2: value2,...
+    }
+ }
+
+- Update nested fields: updateOne, updateMany
+ db.collection.updateOne(whatToUpdate, howToUpdate)
+ whatToUpdate = query object
+
+ howToUpdate = {
+    $set: {
+       "field1.subField1": value
+    }
+ }
+
+- Atomic operators: inc, push, pull, addToSet
+  db.posts.update({
+     _id: ObjectId(...)
+  }, {
+     viewCount: {$inc: 1},
+     likedBy: {$push: ObjectId(...)}
+  })
+
+- Collection methods:
+ + db.collection.drop()
+ + db.collection.renameCollection("new name");
+
+- Indexing: db.member.createIndex({email: 1})
+
+- Compound indexing: db.member.createIndex({age: 1, yearOfExp: 1})
+
+-->
+
+<!-- 
+NOSQL(dongodb.com/doc/server,MongoDB, RavenDB, Redis, Neo4j,) mongodbtutorialspoint
+  - NoSQL là Not Only SQL (Non relational)
+  - Không sử dụng mô hình dữ liệu quan hệ (RDBMs)
+  - Mô hình lưu trữ {"key" : "value"}
+  - Hệ thống lưu trữ phân tán, NoSQL là hệ cơ sở dữ liệu không ràng buộc, phân tán, mã nguồn mở, khả năng mở rộng theo chiều ngang, độ chịu tải và chịu lỗi cao, yêu cầu về tài nguyên phần cứng thấp.
+  - High scalability, vertical scalable(mở rộng theo chiều dọc - nâng cấp server(SQL), scale up), horizontal scalable(mở rộng theo chiều ngang - thêm server, scale out)
+
+RELATIONAL                NON - RELATIONAL
+table                       collection
+dòng(record, row)           BSON document
+column                      field
+
+Nhắc lại một chút, database (DB) là một cơ sở dữ liệu, gồm các bảng, hàng, cột. Những thứ mình sẽ nhắc đến trong bài như: MySQL, Microsoft SQL server, MongoDB, .. là hệ quản trị cơ sở dữ liệu (DBMS). Các bạn đừng nhầm lẫn 2 khái niệm này. Thật ra, SQL không phải là … DB, cũng không phải là DBMS. Nó là viết tắt của Structure Query Language (Ngôn ngữ truy vấn cấu trúc). Ngôn ngữ này truy vấn trên nền một RDBMS (Hệ quản trị CSDL quan hệ). Đây là thứ các bạn sinh viên được dạy trong môn “Cơ sở dữ liệu”.Trong RDBMS, dữ liệu được lưu vào nhiều bảng. Mỗi bảng sẽ có nhiều cột, nhiều row. Ta sử dụng SQL để truy vấn. RDBMS (MySQL, Microsoft SQL Server, Oracle, …) được sử dụng rất rộng rãi, trong hầu hết các ứng dụng, vì một số lý do sau:
+   Tính ACID (Atomicity, Consistency, Isolation, Durability) của một transaction được đảm bảo.
+   Với database chuẩn 3, dữ liệu được đảm bảo tính đồng nhất và toàn vẹn (consistency).
+   Có rất nhiều driver cho mọi ngôn ngữ: Java, C#, PHP.
+   Số lượng lập trình viên biết và dùng SQL rất nhiềuuuuuuuuu.
+uy nhiên, RDBMS vẫn còn một số khuyết điểm:
+   Việc mapping giữa các bảng trong database với các object trong code khá rắc rối và phức tạp. (Mặc dù 1 số ORM như Entity Framework, Hibernate đã đơn giản hóa chuyện này).
+   Performance sẽ bị chậm khi phải join nhiều bảng để lấy dữ liệu (Đó là lý do ta sử dụng “giảm chuẩn” để tăng hiệu suất cho RDBMS).
+   Việc thay đổi cấu trúc dữ liệu (Thêm/xóa bảng hoặc thêm/xóa một field) rất mệt mỏi, kéo theo vô số thay đổi trên code.
+   Không làm việc được với dữ liệu không có cấu trúc (un-structure).
+    RDBMS được thiết kế để chạy trên một máy chủ. Khi muốn mở rộng, nó khó chạy trên nhiều máy (clustering).
+NoSQL Database (Phải là NoSQL Database nhé) ra đời, giải quyết được những khuyết điểm của RDBMS:
+   Dữ liệu trong NoSQL DB được lưu dưới dạng document, object. Truy vấn dễ dàng và nhanh hơn RDBMS nhiều.
+   NoSQL có thể làm việc hoàn toàn ok với dữ liệu dạng không có cấu trúc.
+   Việc đổi cấu trúc dữ liệu (Thêm, xóa trường hoặc bảng) rất dễ dàng và nhanh gọn trong NoSQL.
+   Vì không đặt nặng tính ACID của transactions và tính nhất quán của dữ liệu, NoSQL DB có thể mở rộng, chạy trên nhiều máy một cách dễ dàng.
+
+PL    +   FRAMEWORK   +   DATABASE
+LAMP:  Linux Apache, MySQL(SQL), PHP/Python
+MERN: MongoDB(NoSQL), Express, React, NodeJS
+Microsoft: .NET, IIS and SQL Server
+Java: Java, Apache and Oracle
+
+Giờ đây, NoSQL sẽ dần chiếm vị trí của RDBMS. Một số chức năng của ứng dụng không quá coi trọng tính toàn vẹn của dữ liệu, nhưng lại cần tốc độ truy vấn nhanh, dễ truy vấn. Các chức năng này sẽ sử dụng NoSQL để truy vấn/lưu trữ dữ liệu.
+
+Có nhiều loại CSDL NoSQL, các loại này không giống nhau về cách lưu trữ. Và được chia thành những nhóm sau:
+   - Key-value stores: ý tưởng sử dụng hash-table
+-->
+
+<!-- 
+INTRODUCTION
+Document Database
+A record in MongoDB is a BSON document(. BSON is a binary representation of JSON documents, though it contains more data types than JSON), which is a data structure composed of field and value pairs. MongoDB documents are similar to JSON objects. The values of fields may include other documents, arrays, and arrays of documents.
+Ex: {
+      name: "sue",                 field: value
+      age: 26,                     field: value
+      groups: ["new", "sports"]    field: value
+    }
+MongoDB stores documents in collections. Collections are analogous to tables in relational databases.
+
+Key Features: High Performance, Rich Query Language, High Availability, Horizontal Scalability, Support for Multiple Storage Engines
+-->
+
+<!-- 
+1. DB: Create:(use DB_name -> switched to ..), show dbs, drop DB_name
+2. COLLECTIONS: Create(db.createCollection(name, options)), show collections, drop:(db.Colletion_name.drop())
+3. Document: db.collection_name.insertOne(insertMany)([]), remove({delletion_critteria}, 1)({}), updateOne(Many)({}, {$set: {}})
+4. Query document: db.Collection_Name.find().pretty()
+db.mycol.find({"likes":{$lt:50}}).pretty(), $lt,lte,gt,gte,ne,in,nin
+db.mycol.find({"name":{$in:["Raj", "Ram", "Raghu"]}}).pretty()
+db.mycol.find({$and:[{"by":"tutorials point"},{"title": "MongoDB Overview"}]}).pretty()
+db.mycol.find({$or:[{"by":"tutorials point"},{"title": "MongoDB Overview"}]}).pretty()
+db.mycol.find({"likes": {$gt:10}, $or: [{"by": "tutorials point"}, {"title": "MongoDB Overview"}]}).pretty()
+ db.empDetails.find({$nor:[{"First_Name": "Radhika"},		{"Last_Name": "Christopher"}]}.pretty()
+5. Projection: db.mycol.find({},{"title":1,_id:0})
+6. Limit Records: 
+db.mycol.find({},{"title":1,_id:0}).limit(2)
+db.mycol.find({},{"title":1,_id:0}).limit(1).skip(1)
+7. Sort Records:
+db.mycol.find({},{"title":1,_id:0}).sort({"title":-1}) (1: ascending, -1: descending)
+-->
+
+
+<!-- 
+db.studentData.updateMany({}, { $set: { profilepic: {small: 50, med: 100, large: 200}}})
+db.studentData.find({"profilepic.med": 100})
+db.studentData.findOne({name: "Mark"}).lastlogin
+
+Relational: ràng buộc
+Non - relational: không ràng buộc
+High Scalability: khả năng mở rộng
+Vertical scalable: khả năng mở rộng chiều dọc
+Horizontal scalable: khả năng mở rộng chiều ngang
+Distributed data: phân tán dữ liệu
+deployment flexibility: triển khai linh hoạt
+high availability: tính sẵn sàng
+Eventual consistency: nhất quán cuối
+durability: lưu trữ tốt
+
+Relation:
+db.persons.insertOne({
+    name: ...,
+    ...
+})
+db.videos.insertOne({
+    topic:"Fun One",
+    length: 4,
+    creator: ObjectId("5c9b90361a0344a90724042b")
+})
+one to many, one to one, many to many relation
+-->
+
+
+
+<!-- 
+AGGREGATE: Documents during aggregation process pass through the stages.
+
+db.<collection>.aggrerate([
+   <stage1>,
+   <stage2>,
+   ...
+   <stageN>
+   ])
+
+MATCH -> GROUP -> SORT -> OUTPUT
+AGGREGATION STAGES .
+- Each stage starts from the stage operator { $<stageOperator>: {} }
+Ex: $match, $group, $project, $sort, $count, $limit, $skip, $out
+
+AGGREGATION EXPRESSIONS
+- Expression refers to the name of the field in input documents "<fiedName>"
+Ex:
+{ $group: {_id: "$age"} }
+{ $group: {_id: "$company.location.country"} }
+{ $group: {_id: "$name", total: {$sum: "$price"}} }
+
+MATCH STAGE
+- Match specific documents using query { $match: { <query> }}
+Ex: { $match: {city: "New York"}}
+    { $match: {age: {$gt: 25 } } }
+    { $match: {$and: [ {gender: "female"}, {age: {$ge: 25 }} ]}}
+
+GROUP STAGE
+- Group input documents by certain expressions { $group: {_id: <expression>, <field1}: {<accumulator1>: <expression1> }, ... }}
+Ex: { $group: {_id: "$age"}}
+    { $group: {_id: {age: "$age", gender: "$gender"}}} // Group by multiple fields
+    { "_id": { age: 27, gender: male }},
+    { "_id": { age: 37, gender: female}},
+    { "_id": { age: 23, gender: male }}
+
+Ex: db.persons.aggregate([
+   {$group: {_id: {eyeColor: "$eyeColor", age: "$age"}}},
+   {$match: {"_id.eyeColor": "blue"}}   
+])
+
+COUNT STAGE
+- Count number of the input documents {$count: "<title>"}
+Ex: {$count: }
+
+SORT STAGE
+- Sort input documents by certain file {$sort: {<field1> <-1|1>, <field2>: < -1|1 > ...}}
+Ex: { $sort: {score: -1}}
+    { $sort: {age: 1, country: 1}}
+   db.persons.aggregate([
+      {$group: {_id: {eyeColor: "$eyeColor", favoriteFruit: "$favoriteFruite"}}},
+      {$sort: {"_id.eyeColor": 1, "_id.favorite.Fruit": -1}}   
+])
+
+PROJECT STAGE: includes, excludes or adds new field(s) { $project: {<field1>: <1>, <field2>: <0>, <newField1>: <expression> ... }}
+Ex: { $project: {name: 1, _id: 0, "company.title": 1}}
+   db.persons.aggregate([
+      { $project: {
+         _id: 0,
+         name: 1, 
+         infor: {
+            eyes: "$eyeColor",
+            fruit: "$favoriteFruit",
+            country: "$company.location.country"
+         }}}])    
+
+LIMIT STAGE: outputs first N documents from the input ( $limit: <number>) (after $sort to produce topN results)
+Ex: {$limit: 100}
+
+UNWIND STAGE:
+- Splits each document with specified array to several documents - one document per array element { $unwind: <arrayReferenceExpression>}
+Ex: {$unwind: "$tags"}
+
+  DOCUMENT1                                   
+{...tags: ["first", "second", "third"] ...}        
+
+->  Document 1           Document 2            Document 3
+   {... tags: "first"}   {...tags: "second"}   {...tags: "third"}
+
+ACCUMULATORS: $sum, $avg, $max, $min
+- Most accumulators are used only in the $group stage
+
+ACCUMULATORS SYNTAX:
+- { $<accumulatorOperator>: <expression> }
+Ex: { $sum: "$quantity"}
+
+SUM: { total: {$sum: "$quantity"}}
+     { count: {$sum: 1 }} // Simple way to count number of the documents in each group
+
+EX: db.persons.aggregate([
+ { $unwind: "$tags"}, 
+ { 
+    $group: {
+       _id: "$tags",
+       count: { $sum: 1}
+    }
+ }
+])
+
+AVG: Calculates average value of the certain values in the documents for each group { $avg: <expression> }
+Ex: {avgAge: { $avg: "$age" }}
+
+db.persons.aggregate([
+   {
+      $group: {
+         _id: "$eyeColor",
+         avgAge: { $avg: "$age"}
+      }
+   }
+])
+
+UNARY OPERATORS: $type, $or, $lt, $gt, $and, $multiply.
+- are usually used in the $project stage.
+
+Ex: db.persons.aggregate([
+   {
+      $project: {
+         name: 1,
+         eyeColorType: { $type: "$eyeColor"},
+         ageType: { $type: "$age"}
+      }
+   }
+])
+
+OUT STAGE: { $out: "<outputCollectionName>"}
+- Writes resulting documents to the MongoDB collection.
+- $out must be last stage in the pipeline, it will be created automatically
+
+Ex: db.persons.aggregate([
+   { $group: {_id: {age: "$age", eyeColor: "$eyeColor"}}},
+   { $out: "aggregationResults"}
+])
+
+allowDiskUse: true
+- All aggregation stages can use maximum 100 MB of RAM.
+- Server will return error if RAM limit is exceeded.
+- Following option will enable MongoDB to write stages data to the tempotal files.
+Ex: db.persons.aggregate([], {allowDiskUse: true})
+-->
+
+<!-- 
+INDEXING
+- Improve MongoDB query execution.
+- Without index whole collection must be scanned (COLLSCAN)
+- Index stores sorted field values.
+- B-Tree index data structure
+- Default _id index: {_id: 1} is default indexx in each MongoDB collection, name of thi index is _id, default _id index is unique.
+Ex: {
+   "v": 2,
+   "key": {
+      _id: 1
+   },
+   "name": "_id_",
+   "ns": "myDb.persons"
+}
+
+CREATE NEW INDEX: db.collection.createIndex({keyname: [ -1|1 ]}, options)
+Options: { background: true }, { unique: true }, { name: "indexName" }
+
+DELETE INDEXES: db.collection.dropIndexes(), db.collection.dropIndex({ <fieldName>: 1})
+
+
+
+REMOVE():
+- All: db.collection.remove(query)         -> WriteResult({ "nRemoved": 5 })
+- One: db.collection.remove(query, true)   -> WriteResult({ "nRemoved": 1 })
+
+DELETEONE()
+- One: db.collection.deleteOne(query/{} -> xóa cái đầu tiên)
+-> {
+   "acknowledged": true,
+   "deletedCount": 1
+}
+
+DELETEMANY()
+- Many: db.collection.deleteMany(query/{} -> xóa hết)
+-> {
+   "acknowledged": true,
+   "deletedCount": 5
+}
+
+DROP COLLECTION: db.collection.drop()
+DROP DATABASE: db.dropDatabase()
+
+UPDATE METHOD: update(), updateOne/Many, (replaceOne())
+UPDATE OPERATORS: $set, $unset, $rename, $inc, $mul, $currentDate, $pop, $addToSet
+
+SYNTAX: db.collection.method(quey, update, options)
+{$set: {file1: value1, ... }}
+Ex: update({index: 3}, {$set: { ... } }) -> Replace or set value of the field.
+{$unset: {file1: value1, ... }} -> remove certain fields
+Ex: update({index: 4}, {$unset: {
+   processed: 1,
+   "customer.preferences": 1
+}})
+
+UPDATE
+- One: db.collection.update(query, update)
+-> WriteResult({
+   "nMatched": 1/0,
+   "nUpserted": 0,
+   "nModified": 1/0
+})
+- multi:  db.collection.update(query, update, {multi: true}) 
+
+UPDATEONE
+- One: db.collection.updateOne(query, update, options)
+-> {
+   "acknowledged": true,
+   "matchedCount": 1,
+   "modifiedCount": 1/0
+}
+
+UPDATEMANY
+- Many: db.collection.updateMany(query, update, options)
+
+RENAME
+ARRAY UPDATE OPERATORS: $push, $addToSet, $pull, $pullAll, $pop
+
+PUSH: { $push: { arrayName: <element>}}
+- Appends element to the array
+EX: db.collection.update(
+   {cartId: 561},
+   {
+      $push: {
+        // cart: "item1"
+        cart : {
+           $each: ["item2", "item3"]
+        }
+      }
+   }
+) 
+
+ADDTOSET: tương tự như trên, thay push -> addToSet
+- Appends element to the array if this element doesn't exist elready
+
+POP: { $pop: {arrayName: -1 | 1 }}   -1: removes first element, 1: removes last element
+Ex: db.collection.update(
+   {cartId: 561},
+   {
+      $pop: {
+         cartId: 1
+      }
+   }
+)
+
+PULL: { $pull: {arrayName: element | condition }}
+- Removes all elements in the array matching specific element or condition
+EX: db.collection.update(
+   {cartId: 561}, {
+      $pull: {
+         cart: "item1",
+         spentAmouts: { $gt: 400 }
+      }
+   }
+)
+
+PULLALL: { $pullaLL: {arrayName: [valu1, valu2, ...] }}
+- Removes all elements in the array that match specified values
+Ex: db.collection.update(
+ {cartId: 561},
+ {
+    $pullAll: {
+       cart: ["item1", "item2"]
+    }
+ }
+ )
+ 
+ Equivalent to: $pull: {
+    cart: {$in: ["item1", "item2"]}
+ }
+
+ POSITIONAL OPERATOR $: { $set: {<arrayField.$(.field)>: value}}
+
+EX: db.collection.updateOne(
+   {cartId: 325, cart: "item2"},
+   {
+     // $set: {
+     //    "cart.$": "updatedItem2"
+     //  },
+        $unset: {
+           "cart.$": 1
+        }
+   }
+)
+-->
+
+<!--
+EXTENDED JSON:
+- Shell Mode:
+ + Inline BSON types
+ + Internal MongoDB mode
+ + MongoDB Shell understands
+ EX: {
+    "_id": ObjectId("123"),
+    "age": NumberInt(39),
+    "registed": ISODate("2018-18-8")
+ }
+- Strict Mode:
+ + Represents BSON types using special key names prepended with $
+ + JSON standard compatible
+ + For all JSON parsers
+ EX: {
+    "_id": {"$oid": "123"},
+    "age": 39,
+    "registed": {"$date": "2018-18-8"}
+ }
+
+MONGODB ARCHITECTURE
+- MongoDB:  mongod <==> mongo sheel, mongodump/restore/stat/-connector/export/import
+
+MONGODB INTERACTION         (CRUD)
+Mongo Client(mongo shell) <========> Mongo Server(mongod)  <======> Mongo Driver(Nodejs, Java, .NET, Ruby, Python)
+
+TYPE IN SHELL MODE
+- If tpe of the Number is not specified, it will be stored as Double BSON value
+- 32(64)-bit Integer -> NumberInt(Long), Data -> ISODate()
+- 10 -> 10.0, 5.75 -> 5.75, 0 -> 0.0
+
+SORT -> SKIP -> LIMIT
+
+AND, OR
+{ $or: [ {"gender": "male"}, { "age": 25}]} -> {"age": {"$in": [20, 27]}}
+
+QUERY ARRAY BY FIELD VALUE
+- Array contains certain value: {<fieldName>: <value>}
+- Specific element in array has certain value: {"<fieldName>.<index>": <value>}
+- Array contains all specified values independent of order {<fieldName>: {"$all": [<value1>, <value2>, ...]}}
+- Array is of certain size: {<fieldName>: {"$size": <number>}}
+- At least one nested document in the Array must match ALL conditions. Order of contions doesn't matter. {<arrayFiled>: {$elemMatch: {<condition1>, <condition2>, ...}}}
+- $exists, $type.
+- Fileter using Regular Expression: {<fieldName>: {"$regex": /pattern/<options>}}
+EX: {city: {"$regex": /ton/i}}
+{ tags: { $exists: true}}
+{ index: {$type: "int", $eq: 5}}
+EX: {friends: { $eleMatch: { name: "Bob", registered: false }}}
+EX: {tags: "$all": ["ad", "eu"]}
+    {tags: {"$size": 4}}
+
+
+EX: { tags: "ad" }, { "tags.0": "ad"}, { "tags.3": "ab" }
+
+QUERY ARRAY OF NESTED DOCUMENTS
+{
+   "friends": [
+   {
+      "name": "Lora",
+      "age": NumberInt(23)
+   },
+   {
+      "name": "Bob",
+      "age": NumberInt(25)
+   }]
+}
+EX: {"friends.name": "Lora"}
+    {friends: {"name": "Lora", "age": 23}}
+
+
+
+RELATIONS
+- lookUp() for merging reference ralations
+EX: Joining with $lookup
+
+Customers:                       Books:
+{                                 {
+   userName: 'max',                 _id: 'id1',
+   favBooks: ['id1', 'id2']         name: 'Lord of the Rings 1'
+}                                 }
+
+customers.aggrerate([
+  {
+     $lookup: {
+        from: "books",
+        localField: "favBooks",
+        foreignField: "_id",
+        as: "favBookData"
+     }
+  }
+])
+
+mongoimport -d cars -c carsList --drop --jsonArray
+Ex:
+mongoimport tv-shows.json -d movieData -c movies --jsonArray
+-> show dbs(movieData) -> show collections (movies)
+
+INSERT
+- You can insertOne or insertMany, insert also exists but it's not recommended to use it anymore
+- Ordered inserts: By default, when using insertMany(), inserts are ordered - that means, that the inserting process stops if an error occurs. You can change this by switching to "unordered inserts" - your inserting process will then continue, even if errors occurred.
+
+db.movies.find({genres: "Drama"}) <==> db.movies.find({genres: ["Drama"]})
+db.movies.find({$or: [{"rating.average": {$lt: 5}}, {"rating.average": {$gt: 9.3}}]})
+$where: Matches documents that satisfy a JS expression
+$regex: db.movies.find({summary: {$regex: /musical/}})
+$expr: allows use of aggregation expressions within the quey language. {$expr: { <expression>}}
+$all: Matches arrays that contain all elements specified in the query
+Ex: db.movie.find({genre: ["action, "thriller]}) (order) <==> db.movie.find({genre: {$all: ["action", "thriller"]}})
+Ex: db.users.find({$and: [{"hobbies.title": "sports"}, {"hobbies.frequency": {$gte: 3}}]}) === db.users.find({hobbies: {$elemMatch: {title: "sports"}, frequency: {$gte: 3}}})
+- Using projection in arrays:
+Ex: db.movies.find({genres: "Drama"}, {"genres.$": 1})
+- Using slice in arrays:
+SYNTAX: db.collection.find(
+   <query>,
+   { <arrayField>: { $slice: [ <number>, <number> ] } }
+);
+Ex: db.movies.find({"rating.average": {$gt: 9}}, {genres: {$slice: [1, 2]}, name : 1}).pretty()
+
+$inc: { $inc: { <field1>: <amount1>, <field2>: <amount2>, ... } }
+Ex: db.products.update(
+   { sku: "abc123" },
+   { $inc: { quantity: -2, "metrics.orders": 1 } }
+)
+
+- upsert: Optional. If set to true, creates a new document when no document matches the query criteria. The default value is false, which does not insert a new document when no match is found.
+
+- Updating matched array elements
+Ex: db.users.find({hobbies: {$elemMatch: {title: "Sports", frequency: {$gte: 3}}}}, {$set: {"hobbies.$.highFrequency": true}})
+
+- Updating all aray elements:
+Ex: 
++ db.users.updateMany({"hobbies.frequency": {$gt: 2}}, {$set: {"hobbies.$.goodFrequency": true}})
++ db.users.updateMany({totalAge: {$gt: 30}}, {$inc: {"hobbies.$[].frequency": -1}})
+db.users.updateOne({name: "Maria"}, {$push: {hobbies: {$each: [{title: "Good Wine", frequency: 1}, {title: "Hiking", frequency: 2}], $sort: {frequency: -1}}}})
+
+
+
+
+- GEOJSON OBJECTS
+
+- AGGREGATION.
+aggrerate([
+{
+   $project: 
+      {
+         _id: 0, gender: 1, 
+         fullName: {
+            $concat: [
+               { $toUpper: { $substrCP: ['$name.first', 0, 1]} },
+               {
+                  $substrCP: [
+                     '$name.first', 
+                     1,
+                     { $subtract: [{ $strLenCP: '$name.first'}, 1]}
+                  ]
+               },
+               ' ',
+               { $toUpper: '$name.last'}
+            ]
+         }
+
+      }
+}])
+
+db.friends.aggregate([ { $project: {_id: 0, examScore: {$slice: ["$examScores", 2, 1]}} }]);
+
+db.friends.aggregate([ { $project: {_id: 0, numScores: {$size: "$examScores" }} }])
+
+filter
+
+db.friends.aggregate([
+   { $unwind: "$examScores"},
+   { $project: {_id: 1, name: 1, age: 1, score: "$examScores.score"}},
+   { $sort: { score: -1} },
+   { $group: {_id: "$_id", name: {$first: "$name"}, maxScore: { $max: "$score"}} },
+   { $sort: {maxScore: -1} }
+])
+
+MONGODB & SECURITY
+- Authentication & Authorization
+- Transport Encryption
+- Encryption at Rest
+(Auditing, Server & Network config and Setup, Backups & Software updates, ...)
+
+PERFORMANCE:
+- Capped collections for cases where you want to clear old data automatically. Ex: db.createCollection("capped", {capped: true, size: 10000, max: 3})
+- Replica sets provide fault tolerancy (with automatic recovery) and improved read performance ...
+- Sharding (Honrizontal scaling) allows you to scale your MongoDB server horizontally
+- MongoDB server deployment
+-->
